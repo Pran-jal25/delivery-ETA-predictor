@@ -1,0 +1,9 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Large generated data files — not needed for the app to run
+data/
+plots/
+
+# model/ is intentionally NOT ignored so Streamlit Cloud can load the model
