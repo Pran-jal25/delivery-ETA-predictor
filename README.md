@@ -4,7 +4,7 @@ A machine learning project that predicts food delivery time (in minutes) based o
 
 Built on a dataset of **45,000+ delivery orders** across 22 Indian cities.
 
-🔗 **Live App:** *(add your Streamlit Cloud link here after deployment)*
+🔗 **Live App:** [delivery-eta-predictor.streamlit.app](https://delivery-eta-predictor-owqprabeyrrkyjxpjcv8fo.streamlit.app/)
 
 ---
 
