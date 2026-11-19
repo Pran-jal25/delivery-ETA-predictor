@@ -6,10 +6,6 @@ from math import radians, sin, cos, sqrt, atan2
 
 st.set_page_config(page_title="Delivery ETA Predictor", page_icon="🚚")
 
-# ------------------------------------------------------------------
-# All 22 cities from the dataset with their areas and city type
-# City type (Urban/Metropolitian/Semi-Urban) is auto-assigned
-# ------------------------------------------------------------------
 AREAS = {
     "Jaipur":      {"type": "Metropolitian", "areas": {"Pink City":(26.9124,75.7873), "Malviya Nagar":(26.8505,75.8069), "Vaishali Nagar":(26.9100,75.7369), "Mansarovar":(26.8504,75.7577), "C-Scheme":(26.9057,75.8023)}},
     "Ranchi":      {"type": "Urban",         "areas": {"Lalpur":(23.3441,85.3096), "Doranda":(23.3315,85.3097), "Kanke Road":(23.3850,85.3250), "Harmu":(23.3608,85.3001), "Ratu Road":(23.3980,85.3240)}},
@@ -35,14 +31,7 @@ AREAS = {
     "Bhopal":      {"type": "Metropolitian", "areas": {"MP Nagar":(23.2332,77.4336), "Arera Colony":(23.2050,77.4350), "Kolar Road":(23.1700,77.4700), "Govindpura":(23.2500,77.4700), "Shahpura":(23.1900,77.4400)}},
 }
 
-
-def calculate_distance(lat1, lon1, lat2, lon2):
-    R = 6371
-    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
-    a = sin((lat2-lat1)/2)**2 + cos(lat1)*cos(lat2)*sin((lon2-lon1)/2)**2
-    return R * 2 * atan2(sqrt(a), sqrt(1-a))
-
-
+# Load saved model (cached so it loads only once)
 @st.cache_resource
 def load_model():
     with open("model/best_model.pkl",      "rb") as f: model    = pickle.load(f)
@@ -50,36 +39,14 @@ def load_model():
     with open("model/model_info.pkl",      "rb") as f: info     = pickle.load(f)
     return model, features, info
 
-
-def build_input(data, feature_cols):
-    row = {col: 0 for col in feature_cols}
-    # Defaults below are real medians/modes from the training dataset
-    row['Delivery_person_Age']     = 30        # median age in dataset
-    row['Delivery_person_Ratings'] = 4.7       # median rating in dataset
-    row['distance_km']             = data['distance']
-    row['pickup_delay_min']        = 10        # median prep time in dataset
-    row['order_hour']              = data['hour']
-    row['traffic_encoded']         = {'Low':1,'Medium':2,'High':3,'Jam':4}[data['traffic']]
-    row['city_encoded']            = {'Urban':1,'Metropolitian':2,'Semi-Urban':3}[data['city_type']]
-    row['vehicle_encoded']         = 4         # mode: motorcycle (most common in dataset)
-    row['order_type_encoded']      = {'Snack':1,'Drinks':2,'Buffet':3,'Meal':4}[data['order_type']]
-    row['multiple_deliveries']     = 1         # median in dataset
-    row['is_festival']             = 1 if data['festival'] == 'Yes' else 0
-    row['is_weekend']              = data['weekend']
-    row['Vehicle_condition']       = 1         # median in dataset (1 = Good)
-    if f"weather_{data['weather']}" in row:
-        row[f"weather_{data['weather']}"] = 1
-    return pd.DataFrame([row])[feature_cols]
-
-
-# ── UI ──────────────────────────────────────────────────────────
+# ── UI ───────────────────────────────────────────────────────────
 
 st.title("🚚 Delivery ETA Predictor")
 st.write("Fill in your order details to get the estimated delivery time.")
 st.markdown("---")
 
 if not os.path.exists("model/best_model.pkl"):
-    st.error("Model not found. Please run `python run_pipeline.py` first to train the model.")
+    st.error("Model not found. Please run `python run_pipeline.py` and `train_model.ipynb` first.")
     st.stop()
 
 model, feature_cols, info = load_model()
@@ -88,15 +55,19 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("📍 Location")
-    city          = st.selectbox("Select City", list(AREAS.keys()))
-    areas         = list(AREAS[city]["areas"].keys())
+    city            = st.selectbox("Select City", list(AREAS.keys()))
+    areas           = list(AREAS[city]["areas"].keys())
     restaurant_area = st.selectbox("Restaurant Area",    areas, index=0)
     delivery_area   = st.selectbox("Your Delivery Area", areas, index=1)
 
-    r_lat, r_lon  = AREAS[city]["areas"][restaurant_area]
-    d_lat, d_lon  = AREAS[city]["areas"][delivery_area]
-    dist          = calculate_distance(r_lat, r_lon, d_lat, d_lon)
-    city_type     = AREAS[city]["type"]   # auto-assigned, customer doesn't see this
+    r_lat, r_lon = AREAS[city]["areas"][restaurant_area]
+    d_lat, d_lon = AREAS[city]["areas"][delivery_area]
+    city_type    = AREAS[city]["type"]
+
+    # Calculate distance (Haversine formula)
+    r_lat, r_lon, d_lat, d_lon = map(radians, [r_lat, r_lon, d_lat, d_lon])
+    a    = sin((d_lat-r_lat)/2)**2 + cos(r_lat)*cos(d_lat)*sin((d_lon-r_lon)/2)**2
+    dist = 6371 * 2 * atan2(sqrt(a), sqrt(1-a))
 
     st.metric("Estimated Distance", f"{dist:.2f} km")
 
@@ -106,9 +77,9 @@ with col1:
 
 with col2:
     st.subheader("🌦️ Current Conditions")
-    weather  = st.selectbox("Weather",          ["Sunny", "Cloudy", "Windy", "Fog", "Stormy", "Sandstorms"])
-    traffic  = st.selectbox("Traffic Level",    ["Low", "Medium", "High", "Jam"])
-    festival = st.selectbox("Festival Day?",    ["No", "Yes"])
+    weather  = st.selectbox("Weather",        ["Sunny", "Cloudy", "Windy", "Fog", "Stormy", "Sandstorms"])
+    traffic  = st.selectbox("Traffic Level",  ["Low", "Medium", "High", "Jam"])
+    festival = st.selectbox("Festival Day?",  ["No", "Yes"])
     weekend  = 1 if st.checkbox("Is it a Weekend?") else 0
 
 st.markdown("---")
@@ -118,12 +89,25 @@ if st.button("🔮 Predict Delivery Time", use_container_width=True, type="prima
     if restaurant_area == delivery_area:
         st.warning("Please select different areas for restaurant and delivery.")
     else:
-        input_df   = build_input({
-            'distance': dist, 'hour': hour, 'traffic': traffic,
-            'city_type': city_type, 'order_type': order_type,
-            'festival': festival, 'weekend': weekend, 'weather': weather
-        }, feature_cols)
+        # Build input row directly — no separate function needed
+        row = {col: 0 for col in feature_cols}
+        row['Delivery_person_Age']     = 30
+        row['Delivery_person_Ratings'] = 4.7
+        row['distance_km']             = dist
+        row['pickup_delay_min']        = 10
+        row['order_hour']              = hour
+        row['traffic_encoded']         = {'Low':1,'Medium':2,'High':3,'Jam':4}[traffic]
+        row['city_encoded']            = {'Urban':1,'Metropolitian':2,'Semi-Urban':3}[city_type]
+        row['vehicle_encoded']         = 4
+        row['order_type_encoded']      = {'Snack':1,'Drinks':2,'Buffet':3,'Meal':4}[order_type]
+        row['multiple_deliveries']     = 1
+        row['is_festival']             = 1 if festival == 'Yes' else 0
+        row['is_weekend']              = weekend
+        row['Vehicle_condition']       = 1
+        if f"weather_{weather}" in row:
+            row[f"weather_{weather}"]  = 1
 
+        input_df   = pd.DataFrame([row])[feature_cols]
         prediction = int(max(5, round(model.predict(input_df)[0])))
 
         st.markdown("---")
